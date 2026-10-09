@@ -5,30 +5,51 @@
 | 文件 | 内容 |
 | --- | --- |
 | `parameters.m` | ADC 参数、直流扫描点数及正弦测试参数 |
-| `system_model.m` | 四种工况的级联配置、单级 MDAC 和完整 ADC 模型 |
+| `system_model.m` | 四种工况的级联配置及模型函数句柄 |
+| `mdacStage.m` | 单级 MDAC 比较判决及残差模型 |
+| `pipelineADC.m` | 各级比较和残差计算，合成 ADC 输出码 |
+| `analyzeSpectrum.m` | FFT、PSD、SINAD、ENOB 分析 |
 | `tb_Vres.m` | 单级残差测试，调用 `plot_Vres.m` |
 | `tb_dc_transfer.m` | 直流扫描测试，调用 `plot_transfer.m` |
-| `tb_ac_FFT.m` | 正弦加白噪声测试；局部函数计算 FFT、PSD、SINAD、ENOB |
+| `tb_ac_FFT.m` | 正弦加白噪声测试，调用频谱分析和绘图函数 |
 | `plot_Vres.m` | 三种非理想工况与理想残差的对比图 |
 | `plot_transfer.m` | 输入电压与输出码的传输曲线 |
 | `plot_FFT.m` | 四种工况的频谱，标题显示 SINAD 和 ENOB |
 | `plot_PSD.m` | 四种工况的功率谱密度 |
+| `saveSimulationFigure.m` | 将图窗保存到 `simulation_results` |
+| `simulation_results/` | 自动生成的 PNG 和 FIG 仿真图 |
+| `docs/git_and_formatting.md` | Git 版本管理与 MATLAB formatter 教程 |
+| `miss_hit.cfg` | MISS_HIT 的缩进、空格及行长配置 |
+| `.editorconfig` | 支持 EditorConfig 的编辑器使用的基础格式规则 |
+| `.gitattributes` | 固定代码与文档的 LF 换行，减少跨平台格式差异 |
 
-公共参数和模型由各 testbench 加载，绘图脚本使用对应 testbench 的工作区变量。频谱分析函数保留在 `tb_ac_FFT.m` 内。
+公共参数和级联配置由各 testbench 加载。模型、频谱分析和绘图函数均以参数传递数据，每个函数单独放在一个同名 `.m` 文件中。
 
 ## 运行方式
 
 在 MATLAB 中打开任意 `tb_*.m`，点击运行。也可以在项目根目录分别执行：
 
 ```matlab
-run('Pipelined_ADC_Model/tb_Vres.m');         % 单级残差
-run('Pipelined_ADC_Model/tb_dc_transfer.m');  % 直流传输特性
-run('Pipelined_ADC_Model/tb_ac_FFT.m');       % FFT、PSD、SINAD、ENOB
+run('tb_Vres.m');
+run('tb_dc_transfer.m');
+run('tb_ac_FFT.m');
 ```
 
-每个入口都会清空工作区、命令窗口并关闭已有图窗，因此应按需单独运行。仿真结果保留在工作区；需要重新画图时，在对应测试运行后调用 `plot_*.m`。
+每个入口都会清空工作区、命令窗口并关闭已有图窗，因此应按需单独运行。数值结果保留在工作区，绘图函数会自动将图片保存到项目根目录下的 `simulation_results`，与 MATLAB 当前工作目录无关。同名图在再次运行时覆盖。
 
-代码使用 `tiledlayout`，需使用支持该函数的 MATLAB 版本。Hann 窗通过公式生成，频谱分析使用基础 MATLAB 函数，无需 Signal Processing Toolbox。
+| 入口 | 保存的仿真图 |
+| --- | --- |
+| `tb_Vres.m` | `Vres.png`、`Vres.fig` |
+| `tb_dc_transfer.m` | `dc_transfer.png`、`dc_transfer.fig` |
+| `tb_ac_FFT.m` | `ac_FFT.png`、`ac_FFT.fig`、`ac_PSD.png`、`ac_PSD.fig` |
+
+PNG 可直接查看或插入文档，FIG 可在 MATLAB 中通过 `openfig` 重新打开和编辑。重新绘图时传入对应测试留下的数据，例如：
+
+```matlab
+plot_Vres(Vin, VresIdeal, VresMismatch, VresOffset, finiteResidue, VREF);
+```
+
+绘图使用 `tiledlayout` 和 `exportgraphics`，需要 MATLAB R2020a 或更新版本。Hann 窗通过公式生成，频谱分析使用基础 MATLAB 函数，无需 Signal Processing Toolbox。
 
 ## 模型与参数
 
@@ -61,12 +82,14 @@ run('Pipelined_ADC_Model/tb_ac_FFT.m');       % FFT、PSD、SINAD、ENOB
 在 `tb_ac_FFT.m` 开头设置：
 
 ```matlab
-noisePower = 1e-8;  % 输入白噪声方差，V^2；0 为关闭
-useHann = true;     % true：周期 Hann 窗；false：矩形窗
-rng(1);            % 固定随机种子，便于重复比较
+noisePower = 1e-8;
+useHann = true;
+rng(1);
 ```
 
-输入噪声由 `sqrt(noisePower)*randn(Nfft,1)` 生成，是零均值高斯白噪声。`noisePower` 是目标方差，不是 dB 或每 Hz 的功率密度；有限记录的实际均方值会略有波动。默认噪声 RMS 为 `1e-4 V`，四种工况使用同一份带噪输入。
+`noisePower` 是输入白噪声的目标方差，单位 V²，设为 `0` 关闭噪声；`useHann` 为 `true` 使用周期 Hann 窗，为 `false` 使用矩形窗；`rng(1)` 固定随机种子，便于比较。
+
+输入噪声由 `sqrt(noisePower) * randn(Nfft, 1)` 生成，是零均值高斯白噪声。`noisePower` 不是 dB 或每 Hz 的功率密度；有限记录的实际均方值会略有波动。默认噪声 RMS 为 `1e-4 V`，四种工况使用同一份带噪输入。
 
 当前分析仍按相干采样设计：保持 `Fin=nCycles*Fs/Nfft`，使用偶数 `Nfft` 和整数 `nCycles`，建议二者互质。基波还需远离直流和 Nyquist 频点，满足 `1<nCycles<Nfft/2-1`。开启 Hann 窗不代表支持任意非相干输入频率。
 
@@ -93,3 +116,9 @@ Hann 窗会将基波功率分布到相邻频点，因此单个频点的峰值不
 模型不包含采样开关、运放建立时间、时钟抖动或流水线时延；`Fs` 用于生成激励和频率轴，不会自动引入动态电路误差。内部残差不裁剪，输入白噪声也不额外限幅。增大噪声功率时应关注输入是否超出 `[0,VREF]`。
 
 源自 Behzad Razavi 的 *A Tale of Two ADCs: Pipelined Versus SAR*，IEEE Solid-State Circuits Magazine，Summer 2015，pp. 38–46，DOI：10.1109/MSSC.2015.2442372。
+
+## 代码格式与版本管理
+
+代码使用 4 个空格缩进，循环索引用 `stageIndex`、`caseIndex`、`panelIndex` 等名称。优先让代码和命名表达意图，确有必要的注释使用英文；尽量将完整表达式写在一行，不为固定的窄行宽频繁使用 `...`。
+
+文件名保持稳定，用 Git 提交和标签记录版本。仿真图和 MATLAB 自动备份文件由 `.gitignore` 忽略，仅保留结果目录的 `.gitkeep`。具体操作见 [Git 与 MATLAB 格式化教程](docs/git_and_formatting.md)。
