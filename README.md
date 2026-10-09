@@ -18,7 +18,6 @@
 | `plot_PSD.m` | 四种工况的功率谱密度 |
 | `saveSimulationFigure.m` | 将图窗保存到 `simulation_results` |
 | `simulation_results/` | 自动生成的 PNG 和 FIG 仿真图 |
-| `docs/git_and_formatting.md` | Git 版本管理与 MATLAB formatter 教程 |
 | `miss_hit.cfg` | MISS_HIT 的缩进、空格及行长配置 |
 | `.editorconfig` | 支持 EditorConfig 的编辑器使用的基础格式规则 |
 | `.gitattributes` | 固定代码与文档的 LF 换行，减少跨平台格式差异 |
